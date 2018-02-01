@@ -1,0 +1,252 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>Brush Tutorial</title>
+	<link rel="stylesheet" type="text/css" href="style1.css">
+	<script src="http://d3js.org/d3.v3.min.js"></script>
+</head>
+
+<body>
+	
+	<script>
+		console.log("script start");
+
+		d3.select("body").append("p").text("Brush Tutorial");
+
+		var circleColor = "#4277f4";
+
+		// var width = 1500;
+		var outerPadding = 40;	// outerPadding includes the area for axis info. leftPadding + rightPadding.
+        var plotSize = 230;	// 230 * 5 = 1150
+        var plotPadding = 20;	// padding of each plot. leftPadding + rightPadding. the padding is inside the plot
+
+        var xScale = d3.scale.linear()
+            .range([plotPadding/2, plotSize - plotPadding/2]);
+			// .domain() will be determined later (after we know the data)
+            // (10, 230-10 = 220). 10~220 is the x location range (within one plot) we will draw in.
+		var yScale = d3.scale.linear()
+            .range([plotPadding/2, plotSize - plotPadding/2]);
+			// (10, 230-10 = 220). 10~220 is the y location range (within one plot) we will draw in.
+
+		var xAxis = d3.svg.axis()
+			.scale(xScale)
+			.orient("top")
+			.ticks(5);
+			// .ticks(n): axis will try to make n ticks (offsets)
+			// but it doesn't necessarily make n ticks. It is because of the default tick intervals.
+			// the default interval of ticks is 2, 5, 10; depending on the data. 
+			// e.g. when data domain is [0.2 ~ 1.2], the ticks of axis will likely to be:
+			// [0.2 | 0.4 | ... | 1.2]  OR  [0.2 | 0.7 | 1.2]  OR [0.2 | 1.2]
+		
+		var yAxis = d3.svg.axis()
+			.scale(yScale)
+			.orient("left")
+			.ticks(5);
+		
+		// be sure to d3GroupObj.call(brush) to make the brush available.
+		var brush = d3.svg.brush()
+			.x(xScale)
+			.y(yScale);
+		var color = d3.scale.category10();
+
+		// generate array of cross-pair-object {a[i], b[j], i, j}
+		// c[0] = {a[0], b[0], 0, 0}
+		// c[1] = {a[0], b[1], 0, 1} ... 
+		function genCrossPairObjList(a, b) {
+			var cpoLi = [];	// cpol: cross-pair-object-list
+			var n = a.length;
+			var m = b.length;
+			for (var i = 0; i < n; i++) {
+				for (j = 0; j < m; j++) {
+					var cpo = {
+						x: a[i],
+						y: b[j],
+						i: i,
+						j: j
+					};
+					cpoLi.push(cpo);
+				}
+			}
+			return cpoLi;
+		}
+
+		// start of actual drawing with reading csv
+		d3.csv("NBA_shot_logs_2014_15_5BestAttr.csv", function(nbaDataset5) {
+			var attrNames = d3.keys(nbaDataset5[0]);	// get keys by the first record of the dataset
+			var numOfAttr = attrNames.length;
+
+			// .tickSize(n) is weird.
+			// what I figured out is that when n++, the size of the line below the ticks gets ticker
+			xAxis.tickSize(2);	
+			yAxis.tickSize(2);
+
+			var datasetByNumber = [];	// our csv file only has string data. We need to convert them as number variable
+			for(var record_i=0; record_i<nbaDataset5.length; record_i++) {
+				var stringRecord = nbaDataset5[record_i];
+				var numberRecord = {};
+				for(var i=0; i<numOfAttr; i++) {
+					var numberData = parseFloat( stringRecord[attrNames[i]] );
+					numberRecord[attrNames[i]] = numberData;
+				}
+				datasetByNumber.push(numberRecord);
+			}
+			
+			var domainByAttr = {};
+			attrNames.forEach(function(attr) {
+				domainByAttr[attr] = d3.extent(datasetByNumber, function(d) { return d[attr]; });
+				// WHEN FIRST LOOP -> (attr = "SHOT_CLOCK")
+				// domainByAttr["SHOT_CLOCK"] = d3.extent(nbaDataset5, function(d) { return d["SHOT_CLOCK"]; });
+			});
+
+			// svg creation
+			var svg = d3.select("body").append("svg")
+				.attr("width", plotSize*numOfAttr + outerPadding)
+				.attr("height", plotSize*numOfAttr + outerPadding);
+
+			// plot drawing group
+			var plotCanvas = svg.append("g")
+				.attr("class", "plot canvas")
+				.attr("transform", "translate(" + outerPadding/2 + "," + outerPadding/2 + ")");
+
+			// x axis group
+			var xAxesGroup = plotCanvas.append("g")
+				.attr("class", "x axis group");
+
+			// set x axes for the plots
+			xAxesGroup.selectAll("g")
+				.data(attrNames)
+				.enter().append("g")
+					.attr("class", "x axis")
+					.attr("transform", function(d, i) {
+						return "translate(" + (i*plotSize) + ",0)";
+					})
+					.each(function(d) {
+						xScale.domain(domainByAttr[d]);	// .range() is already determined at the start of script
+						d3.select(this).call(xAxis);	// "this" will be each "g" (class="x axis")
+						// .call(axis) will add "g"s (class="tick") to this(=g)
+					});
+			
+			// y axis group
+			var yAxesGroup = plotCanvas.append("g")
+				.attr("class", "y axis group");
+
+			// set y axes for the plots
+			yAxesGroup.selectAll("g")
+				.data(attrNames)
+				.enter().append("g")
+					.attr("class", "y axis")
+					.attr("transform", function(d, i) {
+						return "translate(0," + (i*plotSize) + ")";
+					})
+					.each(function(d) {
+						yScale.domain(domainByAttr[d]);
+						d3.select(this).call(yAxis);
+					});
+
+			// cpo _ attribute pair objects
+			var attrXYcpoLi = genCrossPairObjList(attrNames, attrNames);
+
+			// function of drawing plot
+			function drawPlot(cpo) {
+				xScale.domain(domainByAttr[cpo.x]);		// cpo.x = x axis attribute name
+				yScale.domain(domainByAttr[cpo.y]);
+
+				// "cell" will be the caller of this function drawPlot()
+				// if you look codes further, you wil find it is "g" (class="cell")
+				var cell = d3.select(this);
+
+				// this rect is just for the frame of each plot.DECORATION!
+				cell.append("rect")
+					.attr("class", "frame")
+					.attr("x", plotPadding/2)
+					.attr("y", plotPadding/2)
+					.attr("width", plotSize - plotPadding)
+					.attr("height", plotSize - plotPadding);
+				
+				// draw all the points of the plot inside the cell
+				//// !! make sure to put "fill-opacity" property of "circle" in css
+				//// -> it will make one circle a bit transparent, and overlapped part more opaque
+				cell.selectAll("circle")
+					.data(nbaDataset5)
+					.enter().append("circle")
+						.attr("r", 2)
+						.attr("cx", function(record) { 
+							return xScale( record[cpo.x] );
+						})
+						.attr("cy", function(record) {
+							return yScale( record[cpo.y] );
+						})
+						.style("fill", color(cpo.x));
+			}
+
+			// cell group (each cell is "g")
+			var cellsGroup = plotCanvas.append("g")
+				.attr("class", "cell group");
+			
+			// each cell has one rect and many circles. it is basically a plot.
+			var allCells = cellsGroup.selectAll("g")
+				.data(attrXYcpoLi)
+				.enter().append("g")
+					.attr("class", "cell")
+					.attr("transform", function(cpo) {
+						return "translate(" + (cpo.i * plotSize) + "," + (cpo.j * plotSize) + ")";
+					})
+					.each(drawPlot);
+
+			// write titles on the diagonal plots
+			// .filter() comes after the data().enter()
+			allCells.filter(function(cpo) { return cpo.i === cpo.j; })
+				.append("text")
+					.attr("x", plotPadding + 20)
+					.attr("y", plotPadding + 10)
+					.text(function(cpo) { return cpo.x; }); 
+			
+			brush.on("brushstart", brushstart)
+				.on("brush", brushmove)
+				.on("brushend", brushend);
+
+			var brushCell;	// brushCell will be one cell("g") of allCells.
+			function brushstart(cpo) {
+				// Clear the previously-active brush, if any.
+				if(brushCell !== this) {
+					d3.select(brushCell).call(brush.clear());
+					xScale.domain(domainByAttr[cpo.x]);
+					yScale.domain(domainByAttr[cpo.y]);
+					brushCell = this;
+				}
+			}
+			function brushmove(cpo) {
+				// !! brushing makes one rect inside the "brushCell"
+				// --> the rect's class name is "extent"
+				// --> make sure to add style for the "extent" class in css, since the default color is black
+				var ext = brush.extent();
+
+				// following .classed() function is called for every frame during the brush movement.
+				// it checks every single circles in the current d3 canvas
+				// obj.classed("_class_name_", func() of T or F)
+				// -> will make the obj name to "_class_name_" if func() returns T
+				svg.selectAll("circle").classed("hidden", function(record) {
+					// considering how each "circle" drawn, one circle binds to certain record of our dataset.
+					// the record is the "record" inside this function.
+					return (ext[0][0] > record[cpo.x]) || (ext[1][0] < record[cpo.x])
+						|| (ext[0][1] > record[cpo.y]) || (ext[1][1] < record[cpo.y]);
+				});
+			}
+			function brushend(cpo) {
+				if(brush.empty())
+					svg.selectAll(".hidden").classed("hidden", false);
+			}
+			
+
+			// this call will make brush available for all cells
+			// .call() comes after data().enter()
+			// --> meaning cpo of brushstart(cpo) is one from "attrXYcpoLi" 
+			allCells.call(brush);
+        });
+		// END OF d3.csv()
+	</script>
+	
+</body>
+
+</html>

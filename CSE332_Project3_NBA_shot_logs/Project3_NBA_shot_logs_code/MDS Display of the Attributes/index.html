@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>MDS Display of the Attributes</title>
+	<link rel="stylesheet" type="text/css" href="style1.css">
+	<script src="http://d3js.org/d3.v3.min.js"></script>
+</head>
+
+<body>
+	
+	<script>
+		console.log("script start");
+		
+		var canvasId = "canvas";
+		var topMarginSize = 50;
+		var leftMarginSize = 100;
+		var rightMarginSize = 100;
+
+		d3.select("body").append("p").text("MDS Display of the Attributes");
+
+		var canvasWidth = 700;
+		var canvasHeight = 700;
+		var canvas = d3.select("body")
+						.append("svg")
+						.attr("width", canvasWidth)
+						.attr("height", canvasHeight)
+						.attr("id", canvasId);
+		
+		// start of actual drawing with reading csv
+		d3.csv("mds_attr_points.csv", function(mdsPoints) {
+			var numOfRecords = mdsPoints.length;
+			
+			var attrArray = [];		// should be "x" and "y" and "Attribute Name"
+			var attri = 0;
+			for(var attrName in mdsPoints[0]) {
+				attrArray.push(attrName);
+				attri++;
+			}
+
+			var pointNames = [];
+			for( i=0 ; i<numOfRecords ; i++) {
+				pointNames.push(mdsPoints[i][attrArray[2]]);
+			}
+			
+			var xlist = [];
+			for( xidx=0; xidx<numOfRecords; xidx++) {
+				var strXPos = mdsPoints[xidx][attrArray[0]];
+				xlist.push( parseFloat(strXPos) );
+			}
+			var ylist = [];
+			for( yidx=0; yidx<numOfRecords; yidx++) {
+				var strYPos = mdsPoints[yidx][attrArray[1]];
+				ylist.push( parseFloat(strYPos) );
+			}
+
+			// x axis scaling for drawing
+			var xPosScale = d3.scale.linear()
+				.domain([d3.min(xlist), d3.max(xlist)])
+				.range([0, canvasWidth]);
+			
+			// y axis scaling
+			var yPosScale = d3.scale.linear()
+				.domain([d3.min(ylist), d3.max(ylist)])
+				.range([0, canvasHeight]);
+
+			// data point array for easy access as a list
+			var mdsDrawingPointList = [];
+			for( idx=0; idx < xlist.length ; idx++ ) {
+				var pointXY = [ xPosScale(xlist[idx]), yPosScale(ylist[idx]) ];
+				mdsDrawingPointList.push(pointXY);
+			}
+
+			var pointGroup = canvas.selectAll("g")
+				.data(mdsDrawingPointList)
+				.enter()
+					.append("g")
+						.attr("transform", function(d) {
+							return "translate(" + d[0] + "," + d[1] + ")";
+						});
+			
+			pointGroup.append("circle")
+					.attr("r", 5);
+			
+			pointGroup.append("text")
+				.attr("dx", -10)
+				.attr("dy", -10)
+				.text(function(d, i) {
+					return pointNames[i];	
+				});
+				
+		});
+		// END OF d3.csv()
+	</script>
+	
+</body>
+
+</html>

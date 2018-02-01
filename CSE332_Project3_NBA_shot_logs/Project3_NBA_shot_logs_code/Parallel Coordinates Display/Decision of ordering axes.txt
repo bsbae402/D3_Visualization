@@ -1,0 +1,28 @@
+Correlation listing
+
+best 2 sum(corr) -> TOUCH_TIME, SHOT_DIST(ft)
+
+ordering of highest |correlation|
+SHOT_DIST(ft)		-> PTS_TYPE
+PTS_TYPE		-> [SHOT_DIST], CLOSE_DEF_DIST(ft), ...
+CLOSE_DEF_DIST(ft)	-> [SHOT_DIST], [PTS_TYPE], [TOUCH_TIME], DRIBBLES, ...
+DRIBBLES		-> [TOUCH_TIME], [PTS_TYPE], [CLOSE_DEF_DIST(ft)], SHOT_NUMBER, ...
+SHOT_NUMBER		-> PERIOD, ...
+PERIOD			-> [SHOT_NUMBER], SHOT_CLOCK, ...
+SHOT_CLOCK		-> [SHOT_DIST], [TOUCH_TIME], [DRIBBLES], [PTS_TYPE], [SHOT_NUMBER], [PERIOD], W, ...
+W			-> FINAL_MARGIN, ...
+
+Thus, the ordering of axes is:
+
+TOUCH_TIME 0
+SHOT_DIST(ft) 1
+PTS_TYPE 2
+CLOSE_DEF_DIST(ft) 3
+DRIBBLES 4
+SHOT_NUMBER 5
+PERIOD 6
+SHOT_CLOCK 7
+W 8
+FINAL_MARGIN 9
+
+

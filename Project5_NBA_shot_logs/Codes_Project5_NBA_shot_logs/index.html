@@ -1,0 +1,763 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>Brush NBA shot logs</title>
+	<link rel="stylesheet" type="text/css" href="style1.css">
+	<script src="http://d3js.org/d3.v3.min.js"></script>
+</head>
+
+<body>
+	
+	<script>
+		console.log("script start");
+
+		d3.select("body").append("p").text("NBA shot logs 2014-15 season");
+
+		var svgWidth = 1600;
+        var svgHeight = 1500;
+
+		var plotTitleSpace = 30;
+		var outerPadding = 70;	// each plot's padding
+		var innerPadding = 30;
+		// outerPadding includes the area for axis info. leftPadding + rightPadding.
+
+        var plotSize_PCA = 350;
+        
+		var plotSize_MDS = 350;
+
+		var plotWidth_FGM_barchart = 400;
+		var plotHeight_FGM_barchart = 400;
+		var barWidth = 80;
+		
+        var bivarPlotSize = 270;	// 270 * 4 = 1080
+        var bivarPlotPadding = 20;	// padding of each bivar plot. leftPadding + rightPadding. the padding is inside the plot
+        var plotSize_4by4 = 1120;    // 1080 + 40 = 1120
+		
+		// -layout-
+		// top-left: barchart
+		// PCA plot under barchart
+		// MDS plot under PCA plot
+		// 4 by 4 scatter plot on the right
+		var fgmBarChart_loc_x = 0;
+		var fgmBarChart_loc_y = 0;
+		var plotTranslX_FGMbar = outerPadding/2;
+		var plotTranslY_FGMbar = outerPadding/2;
+		var barHeightMax = plotHeight_FGM_barchart - 30;	// 30 is for the x axis texts of the barchart
+
+		var pca_loc_x = 0;
+		var pca_loc_y = plotHeight_FGM_barchart + 50;	// move 50 down for clear seperation
+		var plotTranslX_PCA = outerPadding/2;
+		var plotTranslY_PCA = pca_loc_y + outerPadding/2;
+
+		var mds_loc_x = 0;
+		var mds_loc_y = pca_loc_y + plotSize_PCA + 50;
+		var plotTranslX_MDS = outerPadding/2;
+		var plotTranslY_MDS = mds_loc_y + outerPadding/2;
+
+		var _4by4_loc_x = plotWidth_FGM_barchart + 30;	// move 30 left for clear seperation
+		var _4by4_loc_y = 0;
+		var plotTranslX_4by4 = _4by4_loc_x + outerPadding/2;
+		var plotTranslY_4by4 = outerPadding/2;
+		
+
+        // svg creation
+        var svg = d3.select("body").append("svg")
+            .attr("width", svgWidth)
+            .attr("height", svgHeight);
+
+        var xScale = d3.scale.linear();
+		var yScale = d3.scale.linear();
+		var barChartScale = d3.scale.linear();
+
+		var xAxis = d3.svg.axis()
+			.scale(xScale)
+			.orient("top")
+			.ticks(5);
+			// .ticks(n): axis will try to make n ticks (offsets)
+			// but it doesn't necessarily make n ticks. It is because of the default tick intervals.
+			// the default interval of ticks is 2, 5, 10; depending on the data. 
+			// e.g. when data domain is [0.2 ~ 1.2], the ticks of axis will likely to be:
+			// [0.2 | 0.4 | ... | 1.2]  OR  [0.2 | 0.7 | 1.2]  OR [0.2 | 1.2]
+		
+		var yAxis = d3.svg.axis()
+			.scale(yScale)
+			.orient("left")
+			.ticks(5);
+
+		var barChartAxis = d3.svg.axis()
+			.scale(barChartScale)
+			.orient("left")
+			.ticks(10);
+		
+        // .tickSize(n) is weird.
+        // what I figured out is that when n++, the size of the line below the ticks gets ticker
+        xAxis.tickSize(1.5);	
+        yAxis.tickSize(1.5);
+		barChartAxis.tickSize(1.5);
+
+		// be sure to d3GroupObj.call(brush) to make the brush available.
+		var brush = d3.svg.brush()
+			.x(xScale)
+			.y(yScale);
+
+        // color is used to apply different color for circles depending on FGM categorical value
+        // FGM = 0 or 1
+		var color = d3.scale.category10();
+
+		// generate array of cross-pair-object {a[i], b[j], i, j}
+		// c[0] = {a[0], b[0], 0, 0}
+		// c[1] = {a[0], b[1], 0, 1} ... 
+		function genCrossPairObjList(a, b) {
+			var cpoLi = [];	// cpol: cross-pair-object-list
+			var n = a.length;
+			var m = b.length;
+			for (var i = 0; i < n; i++) {
+				for (j = 0; j < m; j++) {
+					var cpo = {
+						x: a[i],
+						y: b[j],
+						i: i,
+						j: j
+					};
+					cpoLi.push(cpo);
+				}
+			}
+			return cpoLi;
+		}
+
+		// start of actual drawing with reading csv
+		d3.csv("NBA_shot_logs_extended.csv", function(nbaDatasetExtended) {
+			var attrsOf4by4 = ["DRIBBLES", "TOUCH_TIME", "SHOT_DIST(ft)", "CLOSE_DEF_DIST(ft)"];
+
+			var attrNames = d3.keys(nbaDatasetExtended[0]);	// get keys by the first record of the dataset
+			// attributes in "NBA_shot_logs_extended.csv" file
+			// [0]DRIBBLES, [1]TOUCH_TIME, [2]SHOT_DIST(ft), [3]CLOSE_DEF_DIST(ft), [4]FGM, [5]pca_x, [6]pca_y, [7]mds_x, [8]mdx_y
+
+            // deleting "FGM" attribute process
+            var fgmidx = attrNames.indexOf("FGM");
+            attrNames.splice(fgmidx, 1);
+            // attrNames now only has 4 attributes.
+
+            var fgmList = [];
+            var numOfAttr = attrNames.length;
+
+			var numOfSuccessShot = 0;
+			var numOfMissedShot = 0;
+            
+            // let's delete all FGMs and make a list for storing the FGMs
+            for(var record_i=0; record_i<nbaDatasetExtended.length; record_i++) {
+				var record = nbaDatasetExtended[record_i];
+                fgmList.push( record["FGM"] );
+
+				if(record["FGM"] == "0")
+					numOfMissedShot++;
+				else
+					numOfSuccessShot++;
+
+                delete record["FGM"];
+			}
+
+            // change strings to numbers
+            var datasetByNumber = [];
+            for(var record_i=0; record_i<nbaDatasetExtended.length; record_i++) {
+				var stringRecord = nbaDatasetExtended[record_i];
+                var numberRecord = {};
+                for( var i=0; i<numOfAttr; i++) {
+                    var numberData = parseFloat( stringRecord[attrNames[i]] );
+                    numberRecord[attrNames[i]] = numberData;
+                }
+                datasetByNumber.push(numberRecord);
+			}
+
+            var domainByAttr = {};
+			attrNames.forEach(function(attr) {
+				domainByAttr[attr] = d3.extent(datasetByNumber, function(d) { return d[attr]; });
+			});
+
+			// I think i need to make three big gropus: title group and axis group and cell group
+			var titlesGroup = svg.append("g")
+				.attr("class", "title group");
+
+			// cell group (each cell is "g")
+			// there are going to be 18 cells for now.
+			// 1~16th cells are bivar_plots and 17th is PCA, and 18th is MDS
+			var cellsGroup = svg.append("g")
+				.attr("class", "cell group");
+			var axesGroup = svg.append("g")
+				.attr("class", "axis group");
+			// cellsGroup and axesGroup are just for categorizing each d3 units. They don't have any position or size.
+
+			// the barchart for FGM is whole different thing. So make a unique group for that
+			var fgmBarChartGroup = svg.append("g")
+				.attr("class", "fgm bar chart group")
+				.attr("transform", "translate(" + plotTranslX_FGMbar + "," + plotTranslY_FGMbar + ")");
+
+			// -- set up titles
+			// pca plot title
+			titlesGroup.append("text")
+				.attr("x", plotTranslX_PCA)
+				.attr("y", plotTranslY_PCA)
+				.text("PCA Projection Plot");
+			
+			// mds plot title
+			titlesGroup.append("text")
+				.attr("x", plotTranslX_MDS)
+				.attr("y", plotTranslY_MDS)
+				.text("MDS Plot");
+
+			// 4 by 4 bivar scatter plot title
+			titlesGroup.append("text")
+				.attr("x", plotTranslX_4by4)
+				.attr("y", plotTranslY_4by4)
+				.text("4 by 4 bivariate scatter plot");
+
+			// FGM barchart title
+			fgmBarChartGroup.append("text")
+				.attr("x", 0)
+				.attr("y", 0)
+				.text("Shot Success Bar Chart (success/missed shot count)");
+			
+			// making cell info objs (cio)
+			// 18 cells -> [0~17]
+			// bivar_plots: [0~15], PCA: [16], MDS: [17]
+			var cellInfoObjList = [];
+
+			// attribtue cross pair object : acpo
+			// we have 4 attributes for 4by4 plots
+			var acpoList = genCrossPairObjList(attrsOf4by4, attrsOf4by4);	// length: 16
+			for(var i = 0; i < acpoList.length; i++) {
+				var cellInfoObj = {
+					cellType: "bivarPlot",
+					data: acpoList[i]
+				};
+				cellInfoObjList.push(cellInfoObj);
+			}
+
+			var pca_projectedVectorList = [];
+			for(var i=0; i<datasetByNumber.length; i++) {
+				var record = datasetByNumber[i];
+				var vector = {
+					x: record["pca_x"],
+					y: record["pca_y"]
+				}
+				pca_projectedVectorList.push(vector);
+			}
+			var cio_PCA = {
+				cellType: "PCA",
+				data: pca_projectedVectorList
+			};
+			cellInfoObjList.push(cio_PCA);
+
+			var mds_vectorList = [];
+			for(var i=0; i<datasetByNumber.length; i++) {
+				var record = datasetByNumber[i];
+				var vector = {
+					x: record["mds_x"],
+					y: record["mds_y"]
+				}
+				mds_vectorList.push(vector);
+			}
+			var cio_MDS = {
+				cellType: "MDS",
+				data: mds_vectorList
+			};
+			cellInfoObjList.push(cio_MDS);
+
+			// ------ 4by4 bivar plots axis -----
+			// scaling of drawing range of each bivariate scatter plot
+            xScale.range([bivarPlotPadding/2, bivarPlotSize - bivarPlotPadding/2]);
+            yScale.range([bivarPlotPadding/2, bivarPlotSize - bivarPlotPadding/2]);
+
+            // x axis group
+			var xAxesGroup_4by4 = axesGroup.append("g")
+				.attr("class", "x axis group_4by4")
+				.attr("transform", "translate(" + plotTranslX_4by4 + "," + (plotTranslY_4by4+plotTitleSpace) + ")");
+			
+            // set x axes for each bivar plots
+			xAxesGroup_4by4.selectAll("g")
+				.data(attrsOf4by4)
+				.enter().append("g")
+					.attr("class", "x axis")
+					.attr("transform", function(d, i) {
+						return "translate(" + (i*bivarPlotSize) + ",0)";
+					})
+					.each(function(attr) {
+						xScale.domain(domainByAttr[attr]);	
+						d3.select(this).call(xAxis);	// "this" will be each "g" (class="x axis")
+						// .call(axis) will add "g"s (class="tick") to this(=g)
+					});
+
+            // y axis group
+			var yAxesGroup_4by4 = axesGroup.append("g")
+				.attr("class", "y axis group_4by4")
+				.attr("transform", "translate(" + plotTranslX_4by4 + "," + (plotTranslY_4by4+plotTitleSpace) + ")");
+			
+			// set y axes for the plots
+			yAxesGroup_4by4.selectAll("g")
+				.data(attrsOf4by4)
+				.enter().append("g")
+					.attr("class", "y axis")
+					.attr("transform", function(d, i) {
+						return "translate(0," + (i*bivarPlotSize) + ")";
+					})
+					.each(function(attr) {
+						yScale.domain(domainByAttr[attr]);
+						d3.select(this).call(yAxis);
+					});
+
+			// ---- PCA plot Axes
+			xScale.range([innerPadding/2, plotSize_PCA - innerPadding/2]);
+			xScale.domain(domainByAttr["pca_x"]);
+            yScale.range([innerPadding/2, plotSize_PCA - innerPadding/2]);
+			yScale.domain(domainByAttr["pca_y"]);
+
+			// x axis group
+			var pca_axisGroup_x = axesGroup.append("g")
+				.attr("class", "x axis pca")
+				.attr("transform", "translate(" + plotTranslX_PCA + "," + (plotTranslY_PCA+plotTitleSpace) + ")")
+				.call(xAxis);
+			
+			// y axis group
+			var pca_axisGroup_y = axesGroup.append("g")
+				.attr("class", "y axis pca")
+				.attr("transform", "translate(" + plotTranslX_PCA + "," + (plotTranslY_PCA+plotTitleSpace) + ")")
+				.call(yAxis);
+			
+			// --- MDS plot Axes
+			xScale.range([innerPadding/2, plotSize_MDS - innerPadding/2]);
+			xScale.domain(domainByAttr["mds_x"]);
+            yScale.range([innerPadding/2, plotSize_MDS - innerPadding/2]);
+			yScale.domain(domainByAttr["mds_y"]);
+
+			// x axis group
+			var mds_axisGroup_x = axesGroup.append("g")
+				.attr("class", "x axis mds")
+				.attr("transform", "translate(" + plotTranslX_MDS + "," + (plotTranslY_MDS+plotTitleSpace) + ")")
+				.call(xAxis);
+
+			// y axis group
+			var mds_axisGroup_y = axesGroup.append("g")
+				.attr("class", "y axis mds")
+				.attr("transform", "translate(" + plotTranslX_MDS + "," + (plotTranslY_MDS+plotTitleSpace) + ")")
+				.call(yAxis);
+
+			// --- FGM bar chart axes
+			var biggerCount = Math.max(numOfSuccessShot, numOfMissedShot);
+			var barchartDomainMax = biggerCount + 30;
+
+			barChartScale.range([0, barHeightMax])	
+				.domain([barchartDomainMax, 0]);
+			// plus additional 30 to make some space
+			var fgm_barchart_axis = fgmBarChartGroup.append("g")
+				.attr("class", "axis fgm bar chart")
+				.attr("transform", "translate(0," + plotTitleSpace + ")")
+				.call(barChartAxis);
+			// ---- axes drawing ended here
+
+			// -- draw plots
+			// each cell has one rect and many circles. it is basically a plot.
+			var allCells = cellsGroup.selectAll("g")
+				.data(cellInfoObjList)
+				.enter().append("g")
+					.attr("class", "cell")
+					.attr("transform", function(cio) {
+						return getCellTransfByCIO(cio);
+					})
+					.each(drawPlotByCIO);
+			
+			function getCellTransfByCIO(cio) {
+				if(cio.cellType == "bivarPlot") {
+					var acpo = cio.data;
+					return "translate(" + (acpo.i*bivarPlotSize + plotTranslX_4by4) + "," 
+						+ (acpo.j*bivarPlotSize + plotTranslY_4by4 + plotTitleSpace) + ")";
+				}
+				else if(cio.cellType == "PCA")
+					return "translate(" + plotTranslX_PCA + "," + (plotTranslY_PCA+plotTitleSpace) + ")";
+				else if(cio.cellType == "MDS")
+					return "translate(" + plotTranslX_MDS + "," + (plotTranslY_MDS+plotTitleSpace) + ")";
+				else {
+					console.log("Invalid cio.cellType appeared!");
+					return "translate(0,0)";
+				}
+			}
+
+			// CIO: cell information object
+			function drawPlotByCIO(cio) {
+				if(cio.cellType == "bivarPlot")
+					drawBivarScatterPlot(cio.data, this);
+				else if(cio.cellType == "PCA")
+					drawPCAPlot(cio.data, this);
+				else if(cio.cellType == "MDS")
+					drawMDSPlot(cio.data, this);
+				else
+					console.log("Invalid cio.cellType appeared!");
+			}
+
+			// function of drawing each bivar plot
+			// attribtue cross pair set : acpo 
+			// "caller" is the caller of function "drawPlotByCIO", meaning it is allCells' child "g" cell
+			function drawBivarScatterPlot(acpo, caller) {
+				xScale.range([bivarPlotPadding/2, bivarPlotSize - bivarPlotPadding/2]);
+	            yScale.range([bivarPlotPadding/2, bivarPlotSize - bivarPlotPadding/2]);
+				xScale.domain(domainByAttr[acpo.x]);		// cpo.x = x axis attribute name
+				yScale.domain(domainByAttr[acpo.y]);
+
+				// "cell" will be the caller of this function drawPlot()
+				// if you look codes further, you wil find it is "g" (class="cell")
+				var cell = d3.select(caller);
+
+				// this rect is just for the frame of each bivar plot. DECORATION!
+				cell.append("rect")
+					.attr("class", "frame")
+					.attr("x", bivarPlotPadding/2)
+					.attr("y", bivarPlotPadding/2)
+					.attr("width", bivarPlotSize - bivarPlotPadding)
+					.attr("height", bivarPlotSize - bivarPlotPadding);
+				
+				// draw all the points inside the bivar plot cell
+				//// !! make sure to put "fill-opacity" property of "circle" in css
+				//// -> it will make one circle a bit transparent, and overlapped part more opaque
+				cell.selectAll("circle")
+					.data(datasetByNumber)
+					.enter().append("circle")
+						.attr("r", 2)
+						.attr("cx", function(record) { 
+							return xScale( record[acpo.x] );
+						})
+						.attr("cy", function(record) {
+							return yScale( record[acpo.y] );
+						})
+						.style("fill", function(record, i) {
+							return color(fgmList[i]);	
+						})
+						.attr("fgm", function(record, i) { return fgmList[i]; });
+			}
+
+			// function of drawing PCA plot
+			// "caller" is the caller of function "drawPlotByCIO", meaning it is allCells' child "g" cell
+			function drawPCAPlot(projectedVectorList, caller) {
+				xScale.range([innerPadding/2, plotSize_PCA - innerPadding/2]);
+	            yScale.range([innerPadding/2, plotSize_PCA - innerPadding/2]);
+				xScale.domain(domainByAttr["pca_x"]);		// cpo.x = x axis attribute name
+				yScale.domain(domainByAttr["pca_y"]);
+
+				// "cell" will be the caller of this function drawPlot()
+				// if you look codes further, you wil find it is "g" (class="cell")
+				var cell = d3.select(caller);
+
+				////// pca plot will have unique id for fgm counting
+				cell.attr("id", "pca_plot");
+
+				// this rect is just for the frame of PCA plot. DECORATION!
+				cell.append("rect")
+					.attr("class", "frame")
+					.attr("x", innerPadding/2)
+					.attr("y", innerPadding/2)
+					.attr("width", plotSize_PCA - innerPadding)
+					.attr("height", plotSize_PCA - innerPadding);
+				
+				// draw all the points inside the bivar plot cell
+				//// !! make sure to put "fill-opacity" property of "circle" in css
+				//// -> it will make one circle a bit transparent, and overlapped part more opaque
+				cell.selectAll("circle")
+					.data(datasetByNumber)
+					.enter().append("circle")
+						.attr("r", 2)
+						.attr("cx", function(record) { 
+							return xScale( record["pca_x"] );
+						})
+						.attr("cy", function(record) {
+							return yScale( record["pca_y"] );
+						})
+						.style("fill", function(record, i) {
+							return color(fgmList[i]);
+						})
+						.attr("fgm", function(record, i) { return fgmList[i]; });
+			}
+
+			// function of drawing MDS plot
+			// "caller" is the caller of function "drawPlotByCIO", meaning it is allCells' child "g" cell
+			function drawMDSPlot(mdsVectorList, caller) {
+				xScale.range([innerPadding/2, plotSize_MDS - innerPadding/2]);
+	            yScale.range([innerPadding/2, plotSize_MDS - innerPadding/2]);
+				xScale.domain(domainByAttr["mds_x"]);		// cpo.x = x axis attribute name
+				yScale.domain(domainByAttr["mds_y"]);
+				var cell = d3.select(caller);
+
+				cell.append("rect")
+					.attr("class", "frame")
+					.attr("x", innerPadding/2)
+					.attr("y", innerPadding/2)
+					.attr("width", plotSize_MDS - innerPadding)
+					.attr("height", plotSize_MDS - innerPadding);
+
+				cell.selectAll("circle")
+					.data(datasetByNumber)
+					.enter().append("circle")
+						.attr("r", 2)
+						.attr("cx", function(record) { 
+							return xScale( record["mds_x"] );
+						})
+						.attr("cy", function(record) {
+							return yScale( record["mds_y"] );
+						})
+						.style("fill", function(record, i) {
+							return color(fgmList[i]);
+						})
+						.attr("fgm", function(record, i) { return fgmList[i]; });
+			}
+
+			// write titles on the diagonal cells of 4by4
+			// .filter() comes after the data().enter()
+			allCells.filter(function(cio) { return checkIfCellIsDiagonal4by4(cio); })
+				.append("text")
+					.attr("x", bivarPlotPadding + 20)
+					.attr("y", bivarPlotPadding + 10)
+					.text(function(cio_4by4) { return cio_4by4.data.x; }); 
+			
+			function checkIfCellIsDiagonal4by4(cio) {
+				if(cio.cellType == "bivarPlot") {
+					var acpo = cio.data;
+					return acpo.i === acpo.j;
+				}
+				else
+					return false;
+			}
+			// ------ drawing plots is complete.
+
+			// -- draw fgm bar chart
+			var fgmBarsCanvas = fgmBarChartGroup.append("g")
+				.attr("transform", "translate(0," + plotTitleSpace + ")");
+
+			barChartScale.domain([0, barchartDomainMax]);
+
+			var maxSuccessBarHeight = barChartScale(numOfSuccessShot);
+			var maxMissBarHeight = barChartScale(numOfMissedShot);
+
+			// shown success bar : ssb
+			// shown missed bar : smb
+			// hidden success bar : hsb
+			// hidden missed bar : hmb
+			var sb_x = plotWidth_FGM_barchart*(1/3) - barWidth/2;
+			var mb_x = plotWidth_FGM_barchart*(2/3) - barWidth/2;
+			
+			var sb_y = barHeightMax - maxSuccessBarHeight;
+			var mb_y = barHeightMax - maxMissBarHeight;
+
+			var countTextLoc = 15;
+			// success bar group
+			var sbGroup = fgmBarsCanvas.append("g")
+				.attr("class", "success shots bar")
+				.attr("transform", "translate(" + sb_x + ",0)");
+			var successCountText = sbGroup.append("text")
+				.attr("id", "success_count")
+				.attr("x", 15)
+				.attr("y", sb_y - countTextLoc)
+				.text(numOfSuccessShot);
+			var hsbRect = sbGroup.append("rect")
+				.attr("id", "hidden_success_bar")
+				.attr("x", 0)
+				.attr("y", sb_y)
+				.attr("width", barWidth)
+				.attr("height", 0)
+				.style("fill", "#ccc")
+				.on("click", function() { showOnlySuccess(); } );
+			var ssbRect = sbGroup.append("rect")
+				.attr("id", "shown_success_bar")
+				.attr("x", 0)
+				.attr("y", sb_y)
+				.attr("width", barWidth)
+				.attr("height", maxSuccessBarHeight)
+				.attr("fill", color("1"))
+				.on("click", function() { showOnlySuccess(); } );
+			var barTitle_suc = sbGroup.append("text")
+				.attr("x", 0)
+				.attr("y", barHeightMax + 14)
+				.text("success");
+
+			// miss bar group
+			var mbGroup = fgmBarsCanvas.append("g")
+				.attr("class", "missed shots bar")
+				.attr("transform", "translate(" + mb_x + ",0)");
+			var missCountText = mbGroup.append("text")
+				.attr("id", "miss_count")
+				.attr("x", 15)
+				.attr("y", mb_y - countTextLoc)
+				.text(numOfMissedShot);
+			var hmbRect = mbGroup.append("rect")
+				.attr("id", "hidden_miss_bar")
+				.attr("x", 0)
+				.attr("y", mb_y)
+				.attr("width", barWidth)
+				.attr("height", 0)
+				.attr("fill", "#ccc")
+				.on("click", function() { showOnlyMiss(); });
+			var smbRect = mbGroup.append("rect")
+				.attr("id", "shown_miss_bar")
+				.attr("x", 0)
+				.attr("y", mb_y)
+				.attr("width", barWidth)
+				.attr("height", maxMissBarHeight)
+				.attr("fill", color("0"))
+				.on("click", function() { showOnlyMiss(); });
+			var barTitle_mis = mbGroup.append("text")
+				.attr("x", 0)
+				.attr("y", barHeightMax + 14)
+				.text("missed");	
+			function showOnlySuccess() {
+				d3.select(brushCell).call(brush.clear());
+				svg.selectAll("circle").each(function(record, i) {
+					var fgmVal = d3.select(this).attr("fgm");
+					if(fgmVal == "0")
+						d3.select(this).classed("hidden", true);
+					else
+						d3.select(this).classed("hidden", false);
+				});
+				updateFGMBarChart();
+			}
+			function showOnlyMiss() {
+				d3.select(brushCell).call(brush.clear());
+				svg.selectAll("circle").each(function(record, i) {
+					var fgmVal = d3.select(this).attr("fgm");
+					if(fgmVal == "0")
+						d3.select(this).classed("hidden", false);
+					else
+						d3.select(this).classed("hidden", true);
+				});
+				updateFGMBarChart();
+			}
+			// ---- bar chart drawing is complete
+
+			// -- activate brush
+			brush.on("brushstart", brushstart)
+				.on("brush", brushmove)
+				.on("brushend", brushend);
+			// remember: allCells.data(cellInfoObjList).enter().append("g"=cell) is done previously
+			allCells.call(brush);
+
+			var brushCell;	// brushCell will be one cell("g") of allCells.
+			// allCells.data(cellInfoObjList).enter() has been done, and then we do .call(brush)
+			// thus, brush is attached to each cellInfoObject
+			function brushstart(cio) {
+				// Clear the previously-active brush, if any.
+				if(brushCell !== this) {
+					d3.select(brushCell).call(brush.clear());
+					if(cio.cellType == "bivarPlot"){
+						var acpo = cio.data;
+						xScale.domain(domainByAttr[acpo.x]);
+						yScale.domain(domainByAttr[acpo.y]);
+						xScale.range([bivarPlotPadding/2, bivarPlotSize-bivarPlotPadding/2]);
+						yScale.range([bivarPlotPadding/2, bivarPlotSize-bivarPlotPadding/2]);
+					}
+					else if(cio.cellType == "PCA"){
+						xScale.domain(domainByAttr["pca_x"]);
+						yScale.domain(domainByAttr["pca_y"]);
+						xScale.range([innerPadding/2, plotSize_PCA-innerPadding/2]);
+						yScale.range([innerPadding/2, plotSize_PCA-innerPadding/2]);
+					}
+					else if(cio.cellType == "MDS"){
+						xScale.domain(domainByAttr["mds_x"]);
+						yScale.domain(domainByAttr["mds_y"]);
+						xScale.range([innerPadding/2, plotSize_MDS-innerPadding/2]);
+						yScale.range([innerPadding/2, plotSize_MDS-innerPadding/2]);
+					}
+
+					brushCell = this;
+				}
+			}
+			
+			function brushmove(cio) {
+				// !! brushing makes one rect inside the "brushCell"
+				// --> the rect's class name is "extent"
+				// --> make sure to add style for the "extent" class in css, since the default color is black
+				var ext = brush.extent();
+
+				// following .classed() function is called for every frame during the brush movement.
+				// it checks every single circles in the current d3 canvas
+				// obj.classed("_class_name_", func() of T or F)
+				// -> will make the obj name to "_class_name_" if func() returns T
+				svg.selectAll("circle").classed("hidden", function(record) {
+					// check the previous code lines so that figure out how each circle was drawn.
+					// you will find it was always cell.selectAll("circle").data(datasetByNumber).enter().append("circle")
+					// thus, .data(datasetByNumber).enter() is still going on, and we add classed() for that.
+					var vec_x = 0;
+					var vec_y = 0;
+					if(cio.cellType == "bivarPlot"){
+						var acpo = cio.data;
+						vec_x = record[acpo.x];
+						vec_y = record[acpo.y];
+					}
+					else if(cio.cellType == "PCA"){
+						vec_x = record["pca_x"];
+						vec_y = record["pca_y"];
+					}
+					else if(cio.cellType == "MDS"){
+						vec_x = record["mds_x"];
+						vec_y = record["mds_y"];
+					}
+
+					return (ext[0][0] > vec_x) || (ext[1][0] < vec_x)
+						|| (ext[0][1] > vec_y) || (ext[1][1] < vec_y);
+				});
+
+				updateFGMBarChart();
+			}
+
+			function brushend(cio) {
+				if(brush.empty())
+					svg.selectAll(".hidden").classed("hidden", false);
+				updateFGMBarChart();
+			}
+
+			function updateFGMBarChart() {
+				var hiddenSuccessCount = 0;
+				svg.select("#pca_plot").selectAll("circle").each(function(record,i) {
+					if(d3.select(this).attr("fgm") == "1") {
+						if(d3.select(this).classed("hidden") == true)
+							hiddenSuccessCount++;
+					}
+				});
+				var hiddenMissCount = 0;
+				svg.select("#pca_plot").selectAll("circle").each(function(record,i) {
+					if(d3.select(this).attr("fgm") == "0") {
+						if(d3.select(this).classed("hidden") == true)
+							hiddenMissCount++;
+					}
+				});
+
+				var shownSuccessCount = numOfSuccessShot - hiddenSuccessCount;
+				var shownMissCount = numOfMissedShot - hiddenMissCount;
+
+				var hsbHei = barChartScale(hiddenSuccessCount);
+				var ssbHei = barChartScale(shownSuccessCount);
+				var hmbHei = barChartScale(hiddenMissCount);
+				var smbHei = barChartScale(shownMissCount);
+
+				svg.select("#hidden_success_bar")
+					.attr("height", hsbHei);
+				
+				svg.select("#shown_success_bar")
+					.attr("height", ssbHei)
+					.attr("y", barHeightMax - ssbHei);
+				
+				svg.select("#hidden_miss_bar")
+					.attr("height", hmbHei);
+
+				svg.select("#shown_miss_bar")
+					.attr("height", smbHei)
+					.attr("y", barHeightMax - smbHei);
+				
+				svg.select("#success_count")
+					.text(shownSuccessCount);
+				svg.select("#miss_count")
+					.text(shownMissCount);
+			}
+
+        });
+		// END OF d3.csv()
+	</script>
+	
+</body>
+
+</html>

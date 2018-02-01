@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>Scree plot and PCA plot</title>
+	<link rel="stylesheet" type="text/css" href="style1.css">
+	<script src="http://d3js.org/d3.v3.min.js"></script>
+</head>
+
+<body>
+	
+	<script>
+		console.log("script start");
+		
+		d3.select("body").append("p").text("Scree plot and PCA plot");
+		d3.select("body").append("p").text("Scree plot (sorted eig value)");
+
+		// scree plot
+		var spcId = "screePlotCanvas";	// spc = scree plot canvas
+
+		var spcWidth = 700;
+		var spcHeight = 400;
+		var spc = d3.select("body")
+						.append("svg")
+						.attr("width", spcWidth)
+						.attr("height", spcHeight)
+						.attr("id", spcId);
+		
+		var spcChartHeight = 300;
+		var spcChartWidth = 700;	// never used
+		var spcChartTopMargin = 30;
+		var spcChartLeftMargin = 50;
+		var barWidth = 30;
+		var barGap = 30;
+		
+		d3.select("body").append("p").text("top 2 eigenvectors: ev0 and ev1");
+		d3.select("body").append("p").text("PCA plot");
+
+		// PCA plot
+		var pcapId = "PCAPlot";	// pcap = PCA plot
+		var pcapWidth = 600;
+		var pcapHeight = 600;
+		var pcap = d3.select("body")
+						.append("svg")
+						.attr("width", pcapWidth)
+						.attr("height", pcapHeight)
+						.attr("id", pcapId);
+
+		// start of actual drawing with reading csv
+		d3.csv("eig_value.csv", function(eigValList) {
+			var numOfEigVal = eigValList.length;
+			var propNames = Object.keys(eigValList[0]);
+			var propName = propNames[0];	// this should be "eig_val"
+			console.log(propName);
+			
+			// initialization of eigObjList
+			var eigObjList = [];
+			for( i=0; i<numOfEigVal; i++ ) {
+				var eigObj = {};
+				eigObj["eigVecIndex"] = i;
+				eigObj["eigVal"] = 0;
+				eigObj["eigVec"] = [];
+				eigObjList.push(eigObj);
+			}
+
+			var fEigValList = [];
+			for( i=0; i<numOfEigVal; i++ ){
+				fEigValList.push( parseFloat(eigValList[i][propName]) );
+				eigObjList[i]["eigVal"] = fEigValList[i];
+			}
+			console.log(fEigValList);
+
+			// sorting by descending order based on eigVal
+			eigObjList.sort( function(a, b) {
+				return b["eigVal"] - a["eigVal"];
+			});
+			console.log(eigObjList);
+
+			// draw scree plot
+			var barHeightScale = d3.scale.linear()
+				.domain([0, d3.max(fEigValList)])
+				.range([0, spcChartHeight]);
+			
+			// append scree plot bar chart group
+			var screePlotGroup = spc.append("g");
+
+			var barGroups = screePlotGroup.selectAll("g")
+				.data(eigObjList)
+				.enter()
+					.append("g")
+					.attr("transform", function(d, i) {
+						var xPos = spcChartLeftMargin + i*(barGap+barWidth);
+						return "translate(" + xPos + "," + spcChartTopMargin + ")";
+					});
+			
+			barGroups.append("text")
+				.attr("dy", spcChartHeight + 15)
+				.text(function(d) {
+					return "ev" + d["eigVecIndex"];
+				});
+
+			barGroups.append("rect")
+				.attr("width", barWidth)
+				.attr("height", function(d,i) {
+					var eigVal = d["eigVal"];
+					return barHeightScale(eigVal);	
+				})
+				.attr("y", function(d,i) {
+					var eigVal = d["eigVal"];
+					var barHeight = barHeightScale(eigVal);
+					return spcChartHeight - barHeight;
+				});
+
+			// wait until 2d_projected_points.cssv file loaded
+			d3.csv("2d_projected_points.csv", function(projectedDataset) {
+				var numOfPoints = projectedDataset.length;
+				var properties = Object.keys(projectedDataset[0]);
+
+				var xlist = [];
+				var ylist = [];
+				var xyPointList = [];
+				for( i=0; i<numOfPoints; i++ ) {
+					xPos = parseFloat(projectedDataset[i][properties[0]]);
+					yPos = parseFloat(projectedDataset[i][properties[1]]);
+					xyPointList.push([xPos, yPos]);
+
+					xlist.push(xPos);
+					ylist.push(yPos);
+				}
+
+				console.log(xyPointList);
+				
+				var xPosScale = d3.scale.linear()
+					.domain([d3.min(xlist), d3.max(xlist)])
+					.range([0, pcapWidth]);
+				
+				var yPosScale = d3.scale.linear()
+					.domain([d3.min(ylist), d3.max(ylist)])
+					.range([0, pcapHeight]);
+
+				// draw points on the PCA plot
+				pcap.append("g").selectAll("circle")
+					.data(xyPointList)
+					.enter()
+						.append("circle")
+						.attr("cx", function(point) { return xPosScale(point[0]); })
+						.attr("cy", function(point) { return yPosScale(point[1]); })
+						.attr("r", 2);
+			});		// end of d3.csv("2d_projected_points.csv", ... )
+
+			/*
+			var xlist = [];
+			for( xidx=0; xidx<numOfRecords; xidx++) {
+				var strXPos = mdsPoints[xidx][attrArray[0]];
+				xlist.push( parseFloat(strXPos) );
+			}
+			var ylist = [];
+			for( yidx=0; yidx<numOfRecords; yidx++) {
+				var strYPos = mdsPoints[yidx][attrArray[1]];
+				ylist.push( parseFloat(strYPos) );
+			}
+
+			// x axis scaling for drawing
+			var xPosScale = d3.scale.linear()
+				.domain([d3.min(xlist), d3.max(xlist)])
+				.range([0, canvasWidth]);
+			
+			// y axis scaling
+			var yPosScale = d3.scale.linear()
+				.domain([d3.min(ylist), d3.max(ylist)])
+				.range([0, canvasHeight]);
+
+			// data point array for easy access as a list
+			var mdsDrawingPointList = [];
+			for( idx=0; idx < xlist.length ; idx++ ) {
+				var pointXY = [ xPosScale(xlist[idx]), yPosScale(ylist[idx]) ];
+				mdsDrawingPointList.push(pointXY);
+			}
+
+			canvas.selectAll("circle")
+				.data(mdsDrawingPointList)
+				.enter()
+					.append("circle")
+					.attr("cx", function(point) { return point[0]; })
+					.attr("cy", function(point) { return point[1]; })
+					.attr("r", 1);*/
+				
+		});
+		// END OF d3.csv()
+	</script>
+	
+</body>
+
+</html>

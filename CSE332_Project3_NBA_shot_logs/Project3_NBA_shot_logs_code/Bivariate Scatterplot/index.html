@@ -1,0 +1,305 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>Bivariate Scatterplot</title>
+	<link rel="stylesheet" type="text/css" href="style1.css">
+	<script src="http://d3js.org/d3.v3.min.js"></script>
+</head>
+
+<body>
+	
+	<script>
+		console.log("script start");
+		
+		var xDropDownId = "xVarSelect";
+		var yDropDownId = "yVarSelect";
+		var canvasId = "canvas";
+
+		d3.select("body").append("p").text("Bivariate Scatterplot");
+		d3.select("body").append("p").text("choose two attributes (x,y):");
+
+		var xDropDown = d3.select("body").append("select")
+							.attr("id", xDropDownId);
+		var yDropDown = d3.select("body").append("select")
+							.attr("id", yDropDownId);
+
+		var canvasWidth = 1000;
+		var canvasHeight = 500;
+		var canvas = d3.select("body")
+						.append("svg")
+						.attr("width", canvasWidth)
+						.attr("height", canvasHeight)
+						.attr("id", canvasId);
+		
+		// start of actual drawing with reading csv
+		d3.csv("NBA_shot_logs_2014_2015_reduced_at1.csv", function(nbaDataset) {
+			var numOfRecords = nbaDataset.length;
+						
+			var attrArray = [];
+			var attri = 0;
+			for(var attrName in nbaDataset[0]) {
+				//console.log("attrName", attri, ":", attrName);
+				attrArray.push(attrName);
+				attri++;
+			}
+			/* # all attributes
+			shot_id 0 || GAME_ID 1 || MATCHUP 2 || LOCATION 3 || W 4 || FINAL_MARGIN 5 || SHOT_NUMBER 6 || PERIOD 7 
+			|| GAME_CLOCK 8 || SHOT_CLOCK 9 || DRIBBLES 10 || TOUCH_TIME 11 || SHOT_DIST(ft) 12 || PTS_TYPE 13 
+			|| CLOSEST_DEFENDER 14 || CLOSEST_DEFENDER_PLAYER_ID 15 || CLOSE_DEF_DIST(ft) 16 || FGM 17 || PTS 18
+			|| player_name 19 || player_id	20
+			*/
+			// my choice of 10 attributes: 
+			// W 4 -> [0] , FINAL_MARGIN 5 -> [1] , SHOT_NUMBER 6 -> [2] , SHOT_CLOCK 9 -> [3] , 
+			// DRIBBLES 10 -> [4] , TOUCH_TIME 11 -> [5] , SHOT_DIST(ft) 12 -> [6] , 
+			// PTS_TYPE 13 -> [7] , CLOSE_DEF_DIST(ft) 16 -> [8] , FGM 17 -> [9], 
+			// # PERIOD		7	3
+			var selectableAttrs = [attrArray[4], attrArray[5], attrArray[6],
+				attrArray[7], attrArray[9],
+				attrArray[10], attrArray[11], attrArray[12],
+				attrArray[13], attrArray[16]];
+			
+			// there are three categorical data in the nba dataset
+			// : W 4 -> [0], PTS_TYPE 13 -> [7], FGM 17 -> [9]
+			// here are values of each categorical data
+			// W : W , L
+			// PTS_TYPE : 2 , 3
+			// PERIOD : 1 , 2, 3, 4, 5, 6, 7	<- I don't know why but the dataset has period 5,6,7 ...
+			var cateAttrNames = ['W', 'PERIOD', 'PTS_TYPE'];
+			var cateDataTable = {};
+			cateDataTable['W'] = ['W', 'L'];
+			cateDataTable['PTS_TYPE'] = ['2', '3'];
+			cateDataTable['PERIOD'] = ['1', '2', '3', '4', '5', '6', '7'];
+
+			// be careful when you use <select> drop down box.
+			// 'canvas' can overlap the drop down list. meaning if canvas position is over the <select> box,
+			// there will be no response when clicking the box. 
+
+			xDropDown.on("change", xVarSelectHandler);
+			function xVarSelectHandler() {
+				varSelectionChanged();
+			}
+
+			xDropDown.selectAll("option")
+					.data(selectableAttrs)
+					.enter()
+						.append("option")
+						.text( function(varOpt) { return varOpt; });
+
+
+			yDropDown.on("change", yVarSelectHandler);
+			function yVarSelectHandler() {
+				varSelectionChanged();
+			}
+
+			yDropDown.selectAll("option")
+					.data(selectableAttrs)
+					.enter()
+						.append("option")
+						.text( function(varOpt) { return varOpt; });
+			
+			// We will implement update function such that if xindex == yindex,
+			// then the canvas will show nothing.
+			function varSelectionChanged() {
+				var xSelectionIndex = xDropDown.property("selectedIndex");
+				var ySelectionIndex = yDropDown.property("selectedIndex");
+
+				canvasNode = document.getElementById(canvasId);
+				// delete all elements currently existing on the canvas
+				while(canvasNode.firstChild) {
+					canvasNode.removeChild(canvasNode.firstChild);
+				}
+
+				if(xSelectionIndex == ySelectionIndex){
+					// do nothing
+				}
+				else {
+					var domXSelect = document.getElementById(xDropDownId);
+					var xAttrName = domXSelect.options[xSelectionIndex].text;
+					var domYSelect = document.getElementById(yDropDownId);
+					var yAttrName = domYSelect.options[ySelectionIndex].text;
+
+					// x=categorical, y=categorical
+					if( (xAttrName in cateDataTable) && (yAttrName in cateDataTable) ) {
+						// not done. not interesting
+					}
+					// x=categorical, y=numeric
+					else if( (xAttrName in cateDataTable) && !(yAttrName in cateDataTable) ) {
+						drawPlot_xCat_yNum(xAttrName, yAttrName);
+					}
+					// x=numeric, y=categorical
+					else if( !(xAttrName in cateDataTable) && (yAttrName in cateDataTable) ) {
+						drawPlot_xNum_yCat(xAttrName, yAttrName);
+					}
+					// x=numeric, y=numeric
+					else if( !(xAttrName in cateDataTable) && !(yAttrName in cateDataTable) ) {
+						drawPlot_Numerics(xAttrName, yAttrName);
+					}
+				}
+			}
+
+			// x=numeric, y=numeric
+			function drawPlot_Numerics(xNumAttrName, yNumAttrName) {
+				var xNumericDataArray = nbaDataset.map( function(record) { return parseFloat(record[xNumAttrName]); } );
+				var yNumericDataArray = nbaDataset.map( function(record) { return parseFloat(record[yNumAttrName]); } );
+
+				var verticalScale = d3.scale.linear()
+										.domain([d3.min(yNumericDataArray), d3.max(yNumericDataArray)])
+										.range([0, canvasHeight]);
+				
+				var horizontalScale = d3.scale.linear()
+										.domain([d3.min(xNumericDataArray), d3.max(xNumericDataArray)])
+										.range([0, canvasWidth]);
+
+				var scaledXArray = [];
+				for( i=0; i<xNumericDataArray.length; i++) {
+					scaledXArray.push(horizontalScale(xNumericDataArray[i]));
+				}
+				var scaledYArray = [];
+				for( i=0; i<yNumericDataArray.length; i++) {
+					scaledYArray.push(verticalScale(yNumericDataArray[i]));
+				}
+				
+				var scaledDataset = [];
+				for( i=0; i<scaledXArray.length; i++) {
+					var scaledRecord = [scaledXArray[i], scaledYArray[i]];
+					scaledDataset.push(scaledRecord);
+				}
+
+				canvas.selectAll("circle")
+					.data(scaledDataset)
+					.enter()
+						.append("circle")
+						.attr("cx", function(record) {
+							return record[0];
+						})
+						.attr("cy", function(record) {
+							return record[1];
+						})
+						.attr("r", 3);
+			}
+
+			function drawPlot_xNum_yCat(xNumAttrName, yCatAttrName) {
+				var xNumericDataArray = nbaDataset.map( function(record) { return parseFloat(record[xNumAttrName]); } );
+				var yCategoricalDataArray = nbaDataset.map( function(record) { return record[yCatAttrName]; } );
+
+				var yCateValueTypes = cateDataTable[yCatAttrName];
+				var numOfValueTypesInY = yCateValueTypes.length;
+				
+				// plan: if there is two value types 'W' and 'L' for the categorical data
+				// then, use scaling domain as (0 ~ 3) and assign 1 for 'W' and 2 for 'L'
+				// I will call these 1 and 2 as 'correspondingNum'
+				// this is for better visual representation 
+				var yCateToNumArray = [];
+				for( i=0; i<yCategoricalDataArray.length; i++) {
+					var correspondingNum = 1;
+					for( typeIdx=0; typeIdx<yCateValueTypes.length; typeIdx++) {
+						if(yCateValueTypes[typeIdx] == yCategoricalDataArray[i]) {
+							yCateToNumArray.push(correspondingNum);
+							break;
+						}
+						correspondingNum++;
+					}
+				}
+
+				var verticalScale = d3.scale.linear()
+										.domain([ 0, yCateValueTypes.length + 1 ])
+										.range([ 0, canvasHeight ]);
+				
+				var horizontalScale = d3.scale.linear()
+										.domain([d3.min(xNumericDataArray), d3.max(xNumericDataArray)])
+										.range([0, canvasWidth]);
+				
+				var scaledXArray = [];
+				for( i=0; i<xNumericDataArray.length; i++) {
+					scaledXArray.push(horizontalScale(xNumericDataArray[i]));
+				}
+				var scaledYArray = [];
+				for( i=0; i<yCateToNumArray.length; i++) {
+					scaledYArray.push(verticalScale(yCateToNumArray[i]));
+				}
+				
+				var scaledDataset = [];
+				for( i=0; i<scaledXArray.length; i++) {
+					var scaledRecord = [scaledXArray[i], scaledYArray[i]];
+					scaledDataset.push(scaledRecord);
+				}
+				
+				canvas.selectAll("circle")
+					.data(scaledDataset)
+					.enter()
+						.append("circle")
+						.attr("cx", function(record) {
+							return record[0];
+						})
+						.attr("cy", function(record) {
+							return record[1];
+						})
+						.attr("r", 3);
+			}
+
+			function drawPlot_xCat_yNum(xCatAttrName, yNumAttrName) {
+				var xCategoricalDataArray = nbaDataset.map( function(record) { return record[xCatAttrName]; } );
+				var yNumericDataArray = nbaDataset.map( function(record) { return parseFloat(record[yNumAttrName]); } );
+
+				var xCateValueTypes = cateDataTable[xCatAttrName];
+				var numOfValueTypesInX = xCateValueTypes.length;
+				
+				// plan: if there is two value types 'W' and 'L' for the categorical data
+				// then, use scaling domain as (0 ~ 3) and assign 1 for 'W' and 2 for 'L'
+				// I will call these 1 and 2 as 'correspondingNum'
+				// this is for better visual representation 
+				var xCateToNumArray = [];
+				for( i=0; i<xCategoricalDataArray.length; i++) {
+					var correspondingNum = 1;
+					for( typeIdx=0; typeIdx<xCateValueTypes.length; typeIdx++) {
+						if(xCateValueTypes[typeIdx] == xCategoricalDataArray[i]) {
+							xCateToNumArray.push(correspondingNum);
+							break;
+						}
+						correspondingNum++;
+					}
+				}
+
+				var verticalScale = d3.scale.linear()
+										.domain([ d3.min(yNumericDataArray), d3.max(yNumericDataArray) ])
+										.range([ 0, canvasHeight ]);
+				
+				var horizontalScale = d3.scale.linear()
+										.domain([ 0, xCateValueTypes.length + 1])
+										.range([ 0, canvasWidth ]);
+				
+				var scaledXArray = [];
+				for( i=0; i<xCateToNumArray.length; i++) {
+					scaledXArray.push(horizontalScale(xCateToNumArray[i]));
+				}
+				var scaledYArray = [];
+				for( i=0; i<yNumericDataArray.length; i++) {
+					scaledYArray.push(verticalScale(yNumericDataArray[i]));
+				}
+				
+				var scaledDataset = [];
+				for( i=0; i<scaledXArray.length; i++) {
+					var scaledRecord = [scaledXArray[i], scaledYArray[i]];
+					scaledDataset.push(scaledRecord);
+				}
+				
+				canvas.selectAll("circle")
+					.data(scaledDataset)
+					.enter()
+						.append("circle")
+						.attr("cx", function(record) {
+							return record[0];
+						})
+						.attr("cy", function(record) {
+							return record[1];
+						})
+						.attr("r", 3);
+			}
+		});
+		// END OF d3.csv()
+	</script>
+	
+</body>
+
+</html>

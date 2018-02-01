@@ -1,0 +1,7 @@
+
+svg {
+	top: 50px;
+	left: 5px;
+	border: 1px solid blue;
+	overflow: scroll;
+}

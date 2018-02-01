@@ -1,0 +1,155 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>10x10 Correlation Matrix</title>
+	<link rel="stylesheet" type="text/css" href="style1.css">
+	<script src="http://d3js.org/d3.v3.min.js"></script>
+</head>
+
+<body>
+	
+	<script>
+		console.log("script start");
+
+		d3.select("body").append("p").text("10x10 Correlation Matrix");
+		
+		var leftMarginSize = 160;
+		var squareSize = 50;		// size of small box
+		var matrixSquareSize = 500;	// 50 * 10 = 500
+
+		var canvasId = "canvas";
+		var canvasWidth = 700;
+		var canvasHeight = 700;
+		var canvas = d3.select("body")
+						.append("svg")
+						.attr("width", canvasWidth)
+						.attr("height", canvasHeight)
+						.attr("id", canvasId);
+
+		// my choice of 10 attributes: 
+		// W [0] , FINAL_MARGIN [1] , SHOT_NUMBER [2] , PERIOD [3] , 
+		// SHOT_CLOCK [4] , DRIBBLES [5] , TOUCH_TIME [6] , SHOT_DIST(ft) [7], 
+		// PTS_TYPE [8] , CLOSE_DEF_DIST(ft) [9] 
+
+		// start of actual drawing with reading csv
+		d3.csv("NBA_shot_10by10CorrMat.csv", function(corrDataset) {
+			// when d3 reads csv file, it does not read them as 2-dimensional Matrix
+			// it will be size 10 list of objects. 
+			// we need to make our 2d matrix again here
+			var attrArray = [];
+			// it does not matter we use coorDataset[0] or coorDataset[1] or coorDataset[2] whatever in for statement below
+			// it just gets all the "keys" of each record object
+			// DON'T WORRY. the order of getting the names is same as how we write on the csv file.
+			for( attrName in corrDataset[0] ) {
+				attrArray.push(attrName);
+			}
+			console.log(attrArray);
+
+			var corrMat = [];
+			for( i=0; i<corrDataset.length; i++) {
+				var record_i = corrDataset[i];
+				var row_i = [];
+				for( j=0; j<attrArray.length; j++) {
+					var elem_i_j = record_i[attrArray[j]];
+					row_i.push(elem_i_j);
+				}
+				corrMat.push(row_i);
+			}
+			console.log(corrMat);
+
+			// corr = [-1.0 ~ 0.0] --> rgb = (0 ~ 255, 0 ~ 255, 255 fix)
+			// corr = [0.0 ~ 1.0] --> rgb = (255 fix, 255 ~ 0, 255 ~ 0)
+			// corr = [-1.0 ~ 1.0] --> _scale = [-255 ~ 255]
+			// if _scale < 0, use blue color
+			var rgbMatrix = []
+			var corrToRgbScale = d3.scale.linear()
+										.domain([-1.0, 1.0])
+										.range([-255, 255]);
+			for( i=0; i<corrMat.length; i++) {
+				var row_i = corrMat[i];
+				var rgb_row_i = []
+				for( j=0; j<corrMat[0].length; j++) {
+					var elem_i_j = row_i[j];
+					var rgb_i_j = corrToRgbScale(elem_i_j);
+					rgb_row_i.push(rgb_i_j);
+				}
+				rgbMatrix.push(rgb_row_i);
+			}
+			console.log(rgbMatrix);
+
+			// let's make 1-dim array -> element is each rgb box's information
+			// its size is 10 X 10 = 100
+			// (0,3) of rgbMatrix --> 0*10 + 3 = [3] of rgbBoxObjList
+			// (3,5) of rgbMatrix --> 3*10 + 5 = [35] of rgbBoxObjList
+			var rgbBoxObjList = []
+			var rgbBoxIdx = 0;
+			for( i=0; i<rgbMatrix.length; i++) {
+				for( j=0; j<rgbMatrix[0].length; j++) {
+					var rgbBoxObj = {};
+					rgbBoxObj["rgbValue"] = rgbMatrix[i][j];
+					rgbBoxObj["xpos"] = j*squareSize;
+					rgbBoxObj["ypos"] = i*squareSize;
+					rgbBoxObjList.push(rgbBoxObj);
+					rgbBoxIdx++;
+				}
+			}
+			console.log(rgbBoxObjList);
+
+			// -- drawing of attribute names on the left 
+			var attrNameGroup = canvas.selectAll("g")
+				.data(attrArray)
+				.enter()
+					.append("g")
+						.attr("transform", function(d, i) { 
+							var transStr = "translate(0," + (i*squareSize) + ")";
+							return transStr; 
+						});
+			// remember: use "transform" not "x" or "y" for "g" element of d3
+			// we cannot directly append "text" to "rect".
+			// so use "g" to stick them together
+			attrNameGroup.append("rect")
+							.attr("width", leftMarginSize)
+							.attr("height", squareSize)
+							.style("fill", "none");
+							
+			attrNameGroup.append("text")
+							.attr("y", 30)
+							.text(function(d) { return d; });
+
+			var colorBoxMatrixGroup = canvas.append("g")
+				.attr("transform", "translate(" + leftMarginSize + ",0)");
+			
+			function genFillStringRGB(rgbBoxObj) {
+				var valueFromRGBMat = rgbBoxObj["rgbValue"];
+				// blue
+				if(valueFromRGBMat < 0.0) {
+					var r_g_int = 255 - Math.floor( -valueFromRGBMat );
+					return "rgb(" + r_g_int + "," + r_g_int + "," + 255 + ")";
+				}
+				// red
+				else {
+					var g_b_int = 255 - Math.floor(valueFromRGBMat);
+					return "rgb(" + 255 + "," + g_b_int + "," + g_b_int + ")";
+				}
+			}
+
+			// now draw the color boxes
+			colorBoxMatrixGroup.selectAll("rect")
+				.data(rgbBoxObjList)
+				.enter()
+					.append("rect")
+					.attr("x", function(rgbBoxObj) { return rgbBoxObj["xpos"]; })
+					.attr("y", function(rgbBoxObj) { return rgbBoxObj["ypos"]; })
+					.attr("width", squareSize)
+					.attr("height", squareSize)
+					.style("fill", function(rgbBoxObj) {
+						return genFillStringRGB(rgbBoxObj);
+					});
+		});
+		// END OF d3.csv()
+	</script>
+	
+</body>
+
+</html>

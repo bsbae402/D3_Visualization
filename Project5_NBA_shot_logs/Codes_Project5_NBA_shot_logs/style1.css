@@ -1,0 +1,27 @@
+.axis,
+.frame {
+  shape-rendering: crispEdges;
+}
+
+.axis path {
+  /*display: none;*/
+}
+
+.frame {
+  fill: none;
+  stroke: #aaa;
+}
+
+circle {
+  fill-opacity: .6;
+}
+
+circle.hidden {
+  fill: #ccc  !important;
+}
+
+.extent {
+  fill: #000;
+  fill-opacity: .125;
+  stroke: #fff; 
+}

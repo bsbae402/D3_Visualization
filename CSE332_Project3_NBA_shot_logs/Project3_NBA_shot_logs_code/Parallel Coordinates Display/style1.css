@@ -1,0 +1,13 @@
+svg {
+	position: fixed;
+	top: 50px;
+	left: 5px;
+	border: 1px solid blue;
+}
+
+.axis path,
+.axis line {
+	fill: none;
+	stroke: black;
+	shape-rendering: crispEdges;
+}

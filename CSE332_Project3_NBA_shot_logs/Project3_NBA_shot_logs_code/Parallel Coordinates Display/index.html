@@ -1,0 +1,215 @@
+<!doctype html>
+<html>
+
+<head>
+	<title>Parallel Coordinates Display</title>
+	<link rel="stylesheet" type="text/css" href="style1.css">
+	<script src="http://d3js.org/d3.v3.min.js"></script>
+</head>
+
+<body>
+	
+	<script>
+		console.log("script start");
+		
+		var canvasId = "canvas";
+		var topMarginSize = 50;
+		var leftMarginSize = 100;
+		var rightMarginSize = 100;
+		var numOfAxisNamePoints = 10;	// how many points on axis that show the value
+		var axisHeight = 500;
+
+		d3.select("body").append("p").text("Parallel Coordinates Display");
+
+		var canvasWidth = 1200;
+		var canvasHeight = 600;
+		var canvas = d3.select("body")
+						.append("svg")
+						.attr("width", canvasWidth)
+						.attr("height", canvasHeight)
+						.attr("id", canvasId);
+
+		// start of actual drawing with reading csv
+		
+		d3.csv("NBA_shot_logs_10attr.csv", function(nbaDataset10) {
+			var numOfRecords = nbaDataset10.length;
+			
+			var attrArray = [];
+			var attri = 0;
+			for(var attrName in nbaDataset10[0]) {
+				attrArray.push(attrName);
+				attri++;
+			}
+			
+			// my choice of 10 attributes: 
+			// W [0] , FINAL_MARGIN [1] , SHOT_NUMBER [2] , PERIOD [3] , 
+			// SHOT_CLOCK [4] , DRIBBLES [5] , TOUCH_TIME [6] , SHOT_DIST(ft) [7], 
+			// PTS_TYPE [8] , CLOSE_DEF_DIST(ft) [9] 
+			var cateAttrNames = ['W', 'PTS_TYPE'];
+			var cateDataTable = {};
+			cateDataTable['W'] = ['W', 'L'];
+			cateDataTable['PTS_TYPE'] = ['2', '3'];
+
+			// order of axes:
+			// TOUCH_TIME 0
+			// SHOT_DIST(ft) 1
+			// PTS_TYPE 2
+			// CLOSE_DEF_DIST(ft) 3
+			// DRIBBLES 4
+			// SHOT_NUMBER 5
+			// PERIOD 6
+			// SHOT_CLOCK 7
+			// W 8
+			// FINAL_MARGIN 9
+
+			var orderedAxesNames = ["TOUCH_TIME", "SHOT_DIST(ft)", "PTS_TYPE", 
+				"CLOSE_DEF_DIST(ft)", "DRIBBLES", "SHOT_NUMBER", "PERIOD",
+				"SHOT_CLOCK", "W", "FINAL_MARGIN"];
+
+			// horizontal scaling for axis positions
+			var horizontalAxisPosScale = d3.scale.linear()
+				.domain([0, orderedAxesNames.length-1])
+				.range([leftMarginSize, canvasWidth-rightMarginSize]);
+
+			var axesXPoslist = [];
+			for( i=0; i<orderedAxesNames.length; i++ ) {
+				var xPos = horizontalAxisPosScale(i);
+				axesXPoslist.push(xPos);
+			}
+
+			// plan: this function will do categorical -> numeric data conversion too.
+			function getDataListOfAttr(attrName) {
+				var dataList = [];
+				if(attrName == 'W') {
+					var conversionTable = {
+						'W': 0,
+						'L': 1
+					}
+					for(i=0; i<nbaDataset10.length; i++) {
+						var c_data = conversionTable[ nbaDataset10[i][attrName] ];
+						dataList.push(c_data);
+					} 
+				}
+				else {
+					for(i=0; i<nbaDataset10.length; i++) {
+						dataList.push( parseFloat(nbaDataset10[i][attrName]) );
+					}
+				}
+				return dataList;
+			}
+
+			// data points
+			var pointInfoObjListContainer = [];
+			for( i_axis=0 ; i_axis < orderedAxesNames.length ; i_axis++ ) {
+				var ithAxisPointInfoList = [];
+				var ithAttrName = orderedAxesNames[i_axis];
+				var dataList = getDataListOfAttr(ithAttrName);
+				var xPos = axesXPoslist[i_axis];	// it is absolute position in canvas
+
+				var axisScale = d3.scale.linear()
+					.domain([d3.min(dataList), d3.max(dataList)])
+					.range([0, axisHeight]);
+				
+				for( j=0; j < numOfRecords; j++) {
+					var yPos = axisScale(dataList[j]) + topMarginSize;	// scaling - not an absolute position. need add margin
+					var dataPointInfoObj = {};
+					dataPointInfoObj["attrName"] = ithAttrName;
+					dataPointInfoObj["xPos"] = xPos;
+					dataPointInfoObj["yPos"] = yPos;
+
+					ithAxisPointInfoList.push(dataPointInfoObj);
+				}
+				pointInfoObjListContainer.push(ithAxisPointInfoList);
+			}
+
+			// line infos
+			var lineInfoObjList = [];
+			var lineIndex = 0;
+			for( leftAttrIdx=0 ; leftAttrIdx < orderedAxesNames.length-1 ; leftAttrIdx++ ) {
+				var rightAttrIdx = leftAttrIdx+1;
+				var lineInfoObj = {};
+
+				var leftPointInfoList = pointInfoObjListContainer[leftAttrIdx];
+				var rightPointInfoList = pointInfoObjListContainer[rightAttrIdx];
+
+				for( i=0 ; i < leftPointInfoList.length; i++){
+					var lineInfoObj = {};
+					lineInfoObj["x1"] = leftPointInfoList[i]["xPos"];
+					lineInfoObj["y1"] = leftPointInfoList[i]["yPos"];
+					lineInfoObj["x2"] = rightPointInfoList[i]["xPos"];
+					lineInfoObj["y2"] = rightPointInfoList[i]["yPos"];
+					lineInfoObjList.push(lineInfoObj);
+				}
+			}
+
+			// draw lines
+			var lineGroup = canvas.append("g");
+			lineGroup.selectAll("line")
+				.data(lineInfoObjList)
+				.enter()
+					.append("line")
+					.attr("x1", function(d){ return d["x1"]; })
+					.attr("y1", function(d){ return d["y1"]; })
+					.attr("x2", function(d){ return d["x2"]; })
+					.attr("y2", function(d){ return d["y2"]; })
+					.attr("stroke-width", 1)
+					.attr("stroke", "#87CEFA");
+
+			// also check categorical -> numeric data conversion
+			function genAxisOfAttr(attrName) {
+				var dataList = getDataListOfAttr(attrName);
+
+				var axisScale = d3.scale.linear()
+					.domain([d3.min(dataList), d3.max(dataList)])
+					.range([0, axisHeight]);
+				
+				var numOfTicks = numOfAxisNamePoints;
+				if( attrName in cateDataTable ) {
+					if( cateDataTable[attrName].length < numOfTicks ) {
+						numOfTicks = cateDataTable[attrName].length;
+					}
+				}
+
+				var axis = d3.svg.axis()
+					.scale(axisScale)
+					.orient("left")
+					.ticks(numOfTicks);
+				return axis;
+			}
+			
+			// draw axes
+			var axisGroups = canvas.append("g")
+				.selectAll("g")
+				.data(orderedAxesNames)
+				.enter()
+					.append("g")
+						.attr("transform", function(d, i) {
+							var transStr = "translate(" + axesXPoslist[i] + "," + topMarginSize + ")";
+							return transStr;
+						})
+						.attr("class", "axis")
+						.each(function(d){ 
+							var singleAxis = genAxisOfAttr(d);
+							d3.select(this).call(singleAxis);
+						});
+
+			// write the attribute names on the top
+			var topTextGroup = canvas.append("g");
+			topTextGroup.selectAll("text")
+				.data(orderedAxesNames)
+				.enter()
+					.append("text")
+						.attr("y", function(d, i) {
+							if( i % 2 == 0 ) { return 20; }
+							else { return 40; }
+						})
+						.attr("x", function(d, i) {	return horizontalAxisPosScale(i); })
+						.attr("text-anchor", "middle")
+						.text(function(d) { return d; });
+		});
+		// END OF d3.csv()
+	</script>
+	
+</body>
+
+</html>
